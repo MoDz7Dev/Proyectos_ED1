@@ -1,4 +1,4 @@
-"""Controlador principal del Simulador de Centro Logístico.
+"""Controlador de la aplicación.
 
 Conecta la vista (Flet) con el modelo (estructuras y dominio) sin
 que ninguno de los dos se conozca directamente.
@@ -10,20 +10,20 @@ import flet as ft
 
 from modelo.dominio.paquete import Paquete
 from modelo.estructuras.cola import Cola, ColaVaciaError
+from modelo.estructuras.cola_prioridad import ColaPrioridad
 from modelo.estructuras.lista_doble import ListaDoblementeEnlazada
-from modelo.estructuras.pila import Pila
-from vista.vista_principal import VistaPrincipal
+from modelo.estructuras.undo_redo import UndoRedoManager
+from vista.vista_grafica import VistaGrafica
 
 
-class ControladorPrincipal:
-    """Coordina la interacción entre :class:`VistaPrincipal` y el modelo.
-
-    En este primer avance el controlador:
+class AppController:
+    """Coordina la interacción entre :class:`VistaGrafica` y el modelo.
 
     - Registra paquetes nuevos en la cola de despacho (FIFO).
-    - Despacha el paquete al frente de la cola.
+    - Los paquetes urgentes van a la cola de prioridad.
+    - Despacha primero lo urgente y después lo normal.
     - Mantiene el historial de despachos en una lista doble.
-    - Reserva la pila para el futuro deshacer/rehacer (Undo/Redo).
+    - Gestiona deshacer/rehacer con :class:`UndoRedoManager`.
     """
 
     def __init__(self, page: ft.Page) -> None:
@@ -32,11 +32,11 @@ class ControladorPrincipal:
         Args:
             page: Página de Flet donde se renderizará la interfaz.
         """
-        self._vista = VistaPrincipal(page)
+        self._vista = VistaGrafica(page)
         self._cola_despacho = Cola()
+        self._cola_urgentes = ColaPrioridad()
         self._historial = ListaDoblementeEnlazada()
-        self._pila_deshacer = Pila()
-        self._pila_rehacer = Pila()
+        self._undo_redo = UndoRedoManager()
 
     def iniciar(self) -> None:
         """Muestra la interfaz inicial y registra los manejadores."""
@@ -72,7 +72,12 @@ class ControladorPrincipal:
             return
 
         paquete = Paquete(destino=destino, peso_kg=peso, urgente=urgente)
-        self._cola_despacho.encolar(paquete)
+        if urgente:
+            self._cola_urgentes.encolar(paquete, prioridad=5)
+        else:
+            self._cola_despacho.encolar(paquete)
+
+        self._undo_redo.aplicar(("registrar", paquete.identificador))
         self._vista.mostrar_mensaje(
             f"Paquete {paquete.identificador} registrado hacia "
             f"{destino}.",
@@ -81,9 +86,12 @@ class ControladorPrincipal:
         self.actualizar_vista()
 
     def despachar_siguiente(self) -> None:
-        """Despacha el paquete al frente de la cola (FIFO)."""
+        """Despacha primero los urgentes; después, los normales (FIFO)."""
         try:
-            paquete = self._cola_despacho.desencolar()
+            if not self._cola_urgentes.esta_vacia():
+                paquete = self._cola_urgentes.desencolar()
+            else:
+                paquete = self._cola_despacho.desencolar()
         except ColaVaciaError:
             self._vista.mostrar_mensaje(
                 "No hay paquetes pendientes de despacho.",
@@ -92,17 +100,51 @@ class ControladorPrincipal:
             return
 
         self._historial.insertar_final(paquete)
+        self._undo_redo.aplicar(("despachar", paquete.identificador))
         self._vista.mostrar_mensaje(
             f"Despachado {paquete.identificador} hacia {paquete.destino}.",
             ft.Colors.GREEN,
         )
         self.actualizar_vista()
 
+    def deshacer(self) -> None:
+        """Deshace la última acción registrada."""
+        accion = self._undo_redo.deshacer()
+        if accion is None:
+            self._vista.mostrar_mensaje(
+                "No hay acciones para deshacer.", ft.Colors.ORANGE
+            )
+            return
+        self._vista.mostrar_mensaje(
+            f"Acción deshecha: {accion[0]} {accion[1]}.",
+            ft.Colors.BLUE,
+        )
+        self.actualizar_vista()
+
+    def rehacer(self) -> None:
+        """Rehace la última acción deshecha."""
+        accion = self._undo_redo.rehacer()
+        if accion is None:
+            self._vista.mostrar_mensaje(
+                "No hay acciones para rehacer.", ft.Colors.ORANGE
+            )
+            return
+        self._vista.mostrar_mensaje(
+            f"Acción rehecha: {accion[0]} {accion[1]}.",
+            ft.Colors.BLUE,
+        )
+        self.actualizar_vista()
+
     def actualizar_vista(self) -> None:
         """Refresca la vista con el estado actual del modelo."""
+        urgentes = [d for d, _ in self._cola_urgentes.a_lista()]
+        normales = self._cola_despacho.a_lista()
         self._vista.actualizar_estado(
-            cola=self._cola_despacho.a_lista(),
+            cola=urgentes + normales,
             historial=self._historial.a_lista_invertida(),
-            pendientes=len(self._cola_despacho),
+            pendientes=len(self._cola_urgentes)
+            + len(self._cola_despacho),
             despachados=len(self._historial),
+            puede_deshacer=self._undo_redo.puede_deshacer(),
+            puede_rehacer=self._undo_redo.puede_rehacer(),
         )

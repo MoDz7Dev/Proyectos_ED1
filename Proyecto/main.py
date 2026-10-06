@@ -6,12 +6,12 @@ Ejecutar con:
 
 import flet as ft
 
-from controlador.controlador_principal import ControladorPrincipal
+from controlador.app_controller import AppController
 
 
 def main(page: ft.Page) -> None:
     """Configura la página e inicializa el controlador principal."""
-    ControladorPrincipal(page).iniciar()
+    AppController(page).iniciar()
 
 
 if __name__ == "__main__":

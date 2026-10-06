@@ -11,7 +11,7 @@ from typing import Any, Optional
 import flet as ft
 
 
-class VistaPrincipal:
+class VistaGrafica:
     """Interfaz gráfica del centro logístico construida con Flet."""
 
     def __init__(self, page: ft.Page) -> None:
@@ -41,6 +41,20 @@ class VistaPrincipal:
         self.etiqueta_pendientes = ft.Text("0", size=28, weight="bold")
         self.etiqueta_despachados = ft.Text("0", size=28, weight="bold")
 
+        # Botones de deshacer/rehacer
+        self.boton_deshacer = ft.IconButton(
+            icon=ft.Icons.UNDO,
+            tooltip="Deshacer",
+            on_click=self._al_deshacer,
+            disabled=True,
+        )
+        self.boton_rehacer = ft.IconButton(
+            icon=ft.Icons.REDO,
+            tooltip="Rehacer",
+            on_click=self._al_rehacer,
+            disabled=True,
+        )
+
         # Listas de la interfaz
         self.lista_cola = ft.Column(spacing=6)
         self.lista_historial = ft.Column(spacing=6)
@@ -49,7 +63,7 @@ class VistaPrincipal:
         """Conecta esta vista con su controlador.
 
         Args:
-            controlador: Instancia de ``ControladorPrincipal``.
+            controlador: Instancia de ``AppController``.
         """
         self._controlador = controlador
 
@@ -86,6 +100,8 @@ class VistaPrincipal:
                             self.interruptor_urgente,
                             boton_registrar,
                             boton_despachar,
+                            self.boton_deshacer,
+                            self.boton_rehacer,
                         ],
                         spacing=12,
                     ),
@@ -142,7 +158,7 @@ class VistaPrincipal:
 
         page.add(
             ft.AppBar(
-                title=ft.Text("📦 Centro Logístico de Distribución"),
+                title=ft.Text("Centro Logistico de Distribucion"),
                 bgcolor=ft.Colors.SURFACE_CONTAINER,
             ),
             ft.Column(
@@ -159,7 +175,6 @@ class VistaPrincipal:
                 expand=True,
             ),
         )
-
 
     def _tarjeta(self, titulo: str, valor: ft.Text) -> ft.Container:
         """Crea una tarjeta de resumen con un título y un valor.
@@ -208,17 +223,22 @@ class VistaPrincipal:
         self._page.update()
 
     def actualizar_estado(self, cola: list, historial: list,
-                          pendientes: int, despachados: int) -> None:
+                          pendientes: int, despachados: int,
+                          puede_deshacer: bool, puede_rehacer: bool) -> None:
         """Actualiza listas y contadores con el estado del modelo.
 
         Args:
-            cola: Paquetes pendientes (de frente a fondo).
+            cola: Paquetes pendientes (urgentes primero).
             historial: Paquetes despachados (más recientes primero).
             pendientes: Cantidad de paquetes en cola.
             despachados: Cantidad de paquetes despachados.
+            puede_deshacer: Si hay acciones para deshacer.
+            puede_rehacer: Si hay acciones para rehacer.
         """
         self.etiqueta_pendientes.value = str(pendientes)
         self.etiqueta_despachados.value = str(despachados)
+        self.boton_deshacer.disabled = not puede_deshacer
+        self.boton_rehacer.disabled = not puede_rehacer
 
         self.lista_cola.controls = (
             [self._tarjeta_paquete(p) for p in cola]
@@ -270,3 +290,16 @@ class VistaPrincipal:
         if self._controlador is None:
             return
         self._controlador.despachar_siguiente()
+
+    def _al_deshacer(self, evento: ft.TapEvent) -> None:
+        """Manejador del botón «Deshacer»."""
+        if self._controlador is None:
+            return
+        self._controlador.deshacer()
+
+    def _al_rehacer(self, evento: ft.TapEvent) -> None:
+        """Manejador del botón «Rehacer»."""
+        if self._controlador is None:
+            return
+        self._controlador.rehacer()
+
